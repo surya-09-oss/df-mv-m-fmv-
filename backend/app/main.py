@@ -63,7 +63,7 @@ async def _try_generate(messages: list[dict]) -> str:
                     model=model,
                     messages=messages,
                 ),
-                timeout=45,
+                timeout=12,
             )
             content = response.choices[0].message.content
             if content and content.strip():
