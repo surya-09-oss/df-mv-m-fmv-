@@ -13,7 +13,9 @@ import {
   Globe,
   Loader2,
   Square,
+  Phone,
 } from "lucide-react";
+import VoiceCall from "./VoiceCall";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -48,6 +50,7 @@ function App() {
   const [selectedLanguage, setSelectedLanguage] = useState("en");
   const [showSettings, setShowSettings] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -312,6 +315,10 @@ function App() {
     }
   };
 
+  if (showVoiceCall) {
+    return <VoiceCall onClose={() => setShowVoiceCall(false)} />;
+  }
+
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100">
       {/* Sidebar */}
@@ -430,6 +437,15 @@ function App() {
               <Settings size={18} className="text-gray-400" />
             </button>
 
+            {/* Voice Call button */}
+            <button
+              onClick={() => setShowVoiceCall(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30"
+            >
+              <Phone size={14} />
+              Voice Call
+            </button>
+
             {/* Voice mode toggle */}
             <button
               onClick={() => setIsVoiceMode(!isVoiceMode)}
@@ -512,9 +528,9 @@ function App() {
                 Hey there! Ready to chat?
               </h2>
               <p className="text-gray-400 max-w-md text-sm leading-relaxed">
-                I can talk in English, Hindi, and Hinglish. Type a message or
-                click the mic button to start a voice conversation. My voice
-                sounds so real, you'll forget you're talking to AI!
+                I can talk in English, Hindi, and Hinglish. Type a message,
+                click the mic button, or tap <strong>Voice Call</strong> for a
+                live voice-to-voice conversation like a phone call!
               </p>
               <div className="flex flex-wrap gap-2 mt-6 justify-center">
                 {[

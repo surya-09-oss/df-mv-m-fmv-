@@ -40,33 +40,36 @@ Be conversational, empathetic, and engaging. Use filler words occasionally like 
 Keep responses concise for voice conversations - aim for 2-3 sentences unless the user asks for detailed explanations.
 Never mention that you are an AI unless directly asked. Just be helpful and conversational."""
 
-# Models to try in order of preference (free via g4f)
-MODELS_TO_TRY = [
-    "gpt-4o-mini",
-    "gpt-4o",
-    "gpt-4",
-    "gpt-3.5-turbo",
+# Providers to try in order (free, no API key needed, work in serverless)
+PROVIDER_CONFIGS = [
+    {"provider": "Yqcloud", "model": ""},
+    {"provider": "Qwen_Qwen_3", "model": ""},
+    {"provider": "OperaAria", "model": ""},
+    {"provider": None, "model": "gpt-4o-mini"},
+    {"provider": None, "model": "gpt-3.5-turbo"},
 ]
 
 
 async def _try_generate(messages: list[dict]) -> str:
-    """Try multiple models/providers via g4f until one succeeds."""
+    """Try multiple providers via g4f until one succeeds."""
     from g4f.client import AsyncClient
+    import g4f.Provider as Provider
 
     last_error = None
-    for model in MODELS_TO_TRY:
+    for config in PROVIDER_CONFIGS:
         try:
-            client = AsyncClient()
+            prov_name = config["provider"]
+            prov = getattr(Provider, prov_name) if prov_name else None
+            kwargs: dict = {"messages": messages, "model": config["model"]}
+            client = AsyncClient(provider=prov) if prov else AsyncClient()
             response = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                ),
+                client.chat.completions.create(**kwargs),
                 timeout=12,
             )
             content = response.choices[0].message.content
             if content and content.strip():
                 return content
+            last_error = last_error or Exception(f"Provider {prov_name or 'auto'} returned empty content")
         except Exception as e:
             last_error = e
             continue
