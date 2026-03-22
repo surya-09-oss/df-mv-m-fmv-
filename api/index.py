@@ -2,6 +2,7 @@ import base64
 import io
 import uuid
 import asyncio
+import logging
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -10,6 +11,8 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
 import edge_tts
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Voice Chatbot API")
 
@@ -27,6 +30,10 @@ conversations: dict[str, list[dict]] = {}
 VOICE_MAP = {
     "en-female": "en-US-JennyNeural",
     "en-male": "en-US-GuyNeural",
+    "en-female-aria": "en-US-AriaNeural",
+    "en-female-sara": "en-US-SaraNeural",
+    "en-male-davis": "en-US-DavisNeural",
+    "en-male-tony": "en-US-TonyNeural",
     "hi-female": "hi-IN-SwaraNeural",
     "hi-male": "hi-IN-MadhurNeural",
 }
@@ -40,22 +47,35 @@ Be conversational, empathetic, and engaging. Use filler words occasionally like 
 Keep responses concise for voice conversations - aim for 2-3 sentences unless the user asks for detailed explanations.
 Never mention that you are an AI unless directly asked. Just be helpful and conversational."""
 
-# Providers to try in order (free, no API key needed, work in serverless)
+# Robust provider configs: multiple no-auth providers ordered by reliability.
+# Each entry tries a specific provider + model combo.
+# The system will try them in order until one succeeds.
 PROVIDER_CONFIGS = [
-    {"provider": "Yqcloud", "model": ""},
-    {"provider": "Qwen_Qwen_3", "model": ""},
-    {"provider": "OperaAria", "model": ""},
+    {"provider": "PollinationsAI", "model": "openai"},
+    {"provider": "Chatai", "model": "gpt-4o-mini-2024-07-18"},
+    {"provider": "PollinationsAI", "model": "openai-fast"},
+    {"provider": "Copilot", "model": "Copilot"},
+    {"provider": "HuggingFace", "model": "openai/gpt-oss-120b"},
+    {"provider": "DeepInfra", "model": "MiniMaxAI/MiniMax-M2.5"},
+    {"provider": "Yqcloud", "model": "gpt-4"},
+    {"provider": "ItalyGPT", "model": "gpt-4o"},
+    {"provider": "OperaAria", "model": "aria"},
+    {"provider": "Qwen_Qwen_3", "model": "qwen-3-235b"},
+    {"provider": "GeminiPro", "model": "models/gemini-2.5-flash"},
+    {"provider": "Groq", "model": "openai/gpt-oss-120b"},
+    # Fallback: let g4f auto-select provider and model
     {"provider": None, "model": "gpt-4o-mini"},
+    {"provider": None, "model": "gpt-4o"},
     {"provider": None, "model": "gpt-3.5-turbo"},
 ]
 
 
 async def _try_generate(messages: list[dict]) -> str:
-    """Try multiple providers via g4f until one succeeds."""
+    """Try multiple free providers via g4f until one succeeds."""
     from g4f.client import AsyncClient
     import g4f.Provider as Provider
 
-    last_error = None
+    last_error: Exception | None = None
     for config in PROVIDER_CONFIGS:
         try:
             prov_name = config["provider"]
@@ -64,19 +84,22 @@ async def _try_generate(messages: list[dict]) -> str:
             client = AsyncClient(provider=prov) if prov else AsyncClient()
             response = await asyncio.wait_for(
                 client.chat.completions.create(**kwargs),
-                timeout=12,
+                timeout=15,
             )
             content = response.choices[0].message.content
             if content and content.strip():
-                return content
-            last_error = last_error or Exception(f"Provider {prov_name or 'auto'} returned empty content")
+                return content.strip()
+            last_error = last_error or Exception(
+                f"Provider {prov_name or 'auto'} returned empty content"
+            )
         except Exception as e:
             last_error = e
+            logger.warning("Provider %s failed: %s", config.get("provider", "auto"), e)
             continue
 
     raise HTTPException(
         status_code=503,
-        detail=f"All AI providers are currently unavailable. Last error: {str(last_error)}"
+        detail=f"All AI providers are currently unavailable. Last error: {last_error}",
     )
 
 
@@ -84,6 +107,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
     language: str = "en"
+    voice: str = "en-female"
 
 
 class ChatResponse(BaseModel):
@@ -109,6 +133,10 @@ async def get_voices():
         "voices": [
             {"id": "en-female", "name": "Jenny (English Female)", "language": "English"},
             {"id": "en-male", "name": "Guy (English Male)", "language": "English"},
+            {"id": "en-female-aria", "name": "Aria (English Female)", "language": "English"},
+            {"id": "en-female-sara", "name": "Sara (English Female)", "language": "English"},
+            {"id": "en-male-davis", "name": "Davis (English Male)", "language": "English"},
+            {"id": "en-male-tony", "name": "Tony (English Male)", "language": "English"},
             {"id": "hi-female", "name": "Swara (Hindi Female)", "language": "Hindi"},
             {"id": "hi-male", "name": "Madhur (Hindi Male)", "language": "Hindi"},
         ]
@@ -161,7 +189,7 @@ async def text_to_speech(req: TTSRequest):
             headers={"Content-Disposition": "inline; filename=speech.mp3"},
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
 
 
 @app.post("/api/chat-and-speak")
@@ -169,7 +197,10 @@ async def chat_and_speak(req: ChatRequest):
     """Combined endpoint: get AI response and convert to speech in one call."""
     chat_response = await chat(req)
 
-    voice_key = f"{req.language}-female"
+    # Use the voice from the request, falling back to language-based default
+    voice_key = req.voice
+    if voice_key not in VOICE_MAP:
+        voice_key = f"{req.language}-female"
     if voice_key not in VOICE_MAP:
         voice_key = "en-female"
 
@@ -180,6 +211,7 @@ async def chat_and_speak(req: ChatRequest):
             text=chat_response.reply,
             voice=voice,
             rate="+5%",
+            pitch="+0Hz",
         )
 
         audio_data = io.BytesIO()
