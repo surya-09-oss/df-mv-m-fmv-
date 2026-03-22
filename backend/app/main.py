@@ -48,51 +48,78 @@ Be conversational, empathetic, and engaging. Use filler words occasionally like 
 Keep responses concise for voice conversations - aim for 2-3 sentences unless the user asks for detailed explanations.
 Never mention that you are an AI unless directly asked. Just be helpful and conversational."""
 
-# Robust provider configs: multiple no-auth providers ordered by reliability.
-PROVIDER_CONFIGS = [
+# Verified working no-auth providers (tested live).
+# Split into tiers: tier 1 is tried in parallel for speed,
+# tier 2 is tried sequentially as fallback.
+TIER1_PROVIDERS = [
     {"provider": "PollinationsAI", "model": "openai"},
-    {"provider": "Chatai", "model": "gpt-4o-mini-2024-07-18"},
-    {"provider": "PollinationsAI", "model": "openai-fast"},
-    {"provider": "Copilot", "model": "Copilot"},
-    {"provider": "HuggingFace", "model": "openai/gpt-oss-120b"},
     {"provider": "DeepInfra", "model": "MiniMaxAI/MiniMax-M2.5"},
     {"provider": "Yqcloud", "model": "gpt-4"},
-    {"provider": "ItalyGPT", "model": "gpt-4o"},
+]
+
+TIER2_PROVIDERS = [
     {"provider": "OperaAria", "model": "aria"},
     {"provider": "Qwen_Qwen_3", "model": "qwen-3-235b"},
-    {"provider": "GeminiPro", "model": "models/gemini-2.5-flash"},
-    {"provider": "Groq", "model": "openai/gpt-oss-120b"},
+    # Auto-select fallback
     {"provider": None, "model": "gpt-4o-mini"},
-    {"provider": None, "model": "gpt-4o"},
     {"provider": None, "model": "gpt-3.5-turbo"},
 ]
 
 
-async def _try_generate(messages: list[dict]) -> str:
-    """Try multiple free providers via g4f until one succeeds."""
+async def _call_provider(messages: list[dict], config: dict, timeout: int = 10) -> str:
+    """Call a single provider and return the response text, or raise on failure."""
     from g4f.client import AsyncClient
     import g4f.Provider as Provider
 
+    prov_name = config["provider"]
+    prov = getattr(Provider, prov_name) if prov_name else None
+    client = AsyncClient(provider=prov) if prov else AsyncClient()
+    response = await asyncio.wait_for(
+        client.chat.completions.create(messages=messages, model=config["model"]),
+        timeout=timeout,
+    )
+    content = response.choices[0].message.content
+    if not content or not content.strip():
+        raise ValueError(f"Provider {prov_name or 'auto'} returned empty content")
+    return content.strip()
+
+
+async def _try_generate(messages: list[dict]) -> str:
+    """Try providers via g4f: tier 1 in parallel (first wins), then tier 2 sequentially."""
+
+    # Tier 1: race top providers in parallel — first successful response wins
+    tasks = [
+        asyncio.create_task(_call_provider(messages, cfg, timeout=12))
+        for cfg in TIER1_PROVIDERS
+    ]
+    done: set[asyncio.Task[str]] = set()
+    pending = set(tasks)
     last_error: Exception | None = None
-    for config in PROVIDER_CONFIGS:
+
+    while pending:
+        finished, pending = await asyncio.wait(
+            pending, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in finished:
+            done.add(task)
+            if task.exception() is None:
+                result = task.result()
+                # Cancel remaining tasks
+                for p in pending:
+                    p.cancel()
+                return result
+            last_error = task.exception()
+            logger.warning("Tier1 provider failed: %s", last_error)
+
+    # Tier 2: sequential fallback
+    for config in TIER2_PROVIDERS:
         try:
-            prov_name = config["provider"]
-            prov = getattr(Provider, prov_name) if prov_name else None
-            kwargs: dict = {"messages": messages, "model": config["model"]}
-            client = AsyncClient(provider=prov) if prov else AsyncClient()
-            response = await asyncio.wait_for(
-                client.chat.completions.create(**kwargs),
-                timeout=15,
-            )
-            content = response.choices[0].message.content
-            if content and content.strip():
-                return content.strip()
-            last_error = last_error or Exception(
-                f"Provider {prov_name or 'auto'} returned empty content"
-            )
+            return await _call_provider(messages, config, timeout=12)
         except Exception as e:
             last_error = e
-            logger.warning("Provider %s failed: %s", config.get("provider", "auto"), e)
+            logger.warning(
+                "Tier2 provider %s failed: %s", config.get("provider", "auto"), e
+            )
             continue
 
     raise HTTPException(
