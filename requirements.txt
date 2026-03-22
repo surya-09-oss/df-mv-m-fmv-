@@ -1,0 +1,5 @@
+fastapi==0.135.1
+edge-tts==7.2.7
+g4f>=0.3.0.0
+uvicorn==0.34.0
+pydantic==2.11.1
