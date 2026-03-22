@@ -35,6 +35,10 @@ export default function VoiceCall({ onClose }: VoiceCallProps) {
   const voices = [
     { id: "en-female", name: "Jenny (English)", language: "en" },
     { id: "en-male", name: "Guy (English)", language: "en" },
+    { id: "en-female-aria", name: "Aria (English)", language: "en" },
+    { id: "en-female-sara", name: "Sara (English)", language: "en" },
+    { id: "en-male-davis", name: "Davis (English)", language: "en" },
+    { id: "en-male-tony", name: "Tony (English)", language: "en" },
     { id: "hi-female", name: "Swara (Hindi)", language: "hi" },
     { id: "hi-male", name: "Madhur (Hindi)", language: "hi" },
   ];
@@ -119,6 +123,7 @@ export default function VoiceCall({ onClose }: VoiceCallProps) {
             message: text,
             conversation_id: conversationId,
             language: selectedLanguage,
+            voice: selectedVoice,
           }),
         });
 
@@ -141,7 +146,7 @@ export default function VoiceCall({ onClose }: VoiceCallProps) {
         }
       }
     },
-    [conversationId, selectedLanguage, playAudioAndResume, startListening]
+    [conversationId, selectedLanguage, selectedVoice, playAudioAndResume, startListening]
   );
 
   // Initialize speech recognition
@@ -514,7 +519,8 @@ export default function VoiceCall({ onClose }: VoiceCallProps) {
 
         {!callActive && (
           <p className="text-xs text-gray-600 mt-2">
-            Speak naturally — AI will listen, respond with voice, then listen again
+            Speak naturally — AI will listen, respond with voice, then listen again.
+            Free & unlimited via GPT4Free.
           </p>
         )}
       </div>

@@ -66,6 +66,10 @@ function App() {
   const voices: VoiceOption[] = [
     { id: "en-female", name: "Jenny (English)", language: "English" },
     { id: "en-male", name: "Guy (English)", language: "English" },
+    { id: "en-female-aria", name: "Aria (English)", language: "English" },
+    { id: "en-female-sara", name: "Sara (English)", language: "English" },
+    { id: "en-male-davis", name: "Davis (English)", language: "English" },
+    { id: "en-male-tony", name: "Tony (English)", language: "English" },
     { id: "hi-female", name: "Swara (Hindi)", language: "Hindi" },
     { id: "hi-male", name: "Madhur (Hindi)", language: "Hindi" },
   ];
@@ -200,6 +204,7 @@ function App() {
           message: text,
           conversation_id: conversationId,
           language: selectedLanguage,
+          voice: selectedVoice,
         }),
       });
 
@@ -220,7 +225,8 @@ function App() {
       if (data.audio_base64 && autoSpeak) {
         await playAudio(data.audio_base64);
       }
-    } catch {
+    } catch (err) {
+      console.error("Chat request failed:", err);
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -713,8 +719,8 @@ function App() {
             </div>
 
             <p className="text-center text-xs text-gray-600 mt-3">
-              Powered by Free GPT API & Edge TTS — Supports English, Hindi &
-              Hinglish
+                Powered by GPT4Free & Edge TTS — Free & Unlimited — English,
+                Hindi & Hinglish
             </p>
           </div>
         </div>
