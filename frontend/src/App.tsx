@@ -51,6 +51,7 @@ function App() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const inputValueRef = useRef(input);
@@ -77,7 +78,9 @@ function App() {
   useEffect(() => {
     // Initialize speech recognition
     const SpeechRecognition =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).SpeechRecognition ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
@@ -117,7 +120,7 @@ function App() {
 
     return () => {
       if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch {}
+        try { recognitionRef.current.stop(); } catch { /* ignore */ }
         recognitionRef.current = null;
       }
       setIsListening(false);
@@ -214,7 +217,7 @@ function App() {
       if (data.audio_base64 && autoSpeak) {
         await playAudio(data.audio_base64);
       }
-    } catch (err) {
+    } catch {
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
