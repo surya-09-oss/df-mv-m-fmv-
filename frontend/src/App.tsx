@@ -15,7 +15,7 @@ import {
   Square,
 } from "lucide-react";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 interface Message {
   id: string;
@@ -53,6 +53,11 @@ function App() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const inputValueRef = useRef(input);
+
+  useEffect(() => {
+    inputValueRef.current = input;
+  }, [input]);
 
   const voices: VoiceOption[] = [
     { id: "en-female", name: "Jenny (English)", language: "English" },
@@ -109,6 +114,14 @@ function App() {
 
       recognitionRef.current = recognition;
     }
+
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+        recognitionRef.current = null;
+      }
+      setIsListening(false);
+    };
   }, [selectedLanguage]);
 
   const playAudio = useCallback(
@@ -223,9 +236,12 @@ function App() {
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
-      // Auto-send after stopping
+      // Auto-send after stopping - use ref to get latest input value
       if (input.trim()) {
-        setTimeout(() => sendMessage(), 300);
+        setTimeout(() => {
+          const currentInput = inputValueRef.current.trim();
+          if (currentInput) sendMessage(currentInput);
+        }, 300);
       }
     } else {
       setInput("");

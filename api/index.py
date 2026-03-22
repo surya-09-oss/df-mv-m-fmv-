@@ -13,19 +13,17 @@ from g4f.client import AsyncClient
 
 app = FastAPI(title="AI Chatbot API")
 
-# Disable CORS. Do not remove this for full-stack development.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# In-memory conversation storage
+# In-memory conversation storage (per serverless instance)
 conversations: dict[str, list[dict]] = {}
 
-# Edge TTS voice mapping for realistic neural voices
 VOICE_MAP = {
     "en-female": "en-US-JennyNeural",
     "en-male": "en-US-GuyNeural",
@@ -61,7 +59,7 @@ class TTSRequest(BaseModel):
     pitch: str = "+0Hz"
 
 
-@app.get("/healthz")
+@app.get("/api/healthz")
 async def healthz():
     return {"status": "ok"}
 
@@ -89,7 +87,6 @@ async def chat(req: ChatRequest):
 
     conversations[conv_id].append({"role": "user", "content": req.message})
 
-    # Keep conversation history manageable (last 20 messages + system prompt)
     if len(conversations[conv_id]) > 21:
         conversations[conv_id] = [conversations[conv_id][0]] + conversations[conv_id][-20:]
 
@@ -100,7 +97,7 @@ async def chat(req: ChatRequest):
             messages=conversations[conv_id],
         )
         reply = response.choices[0].message.content or "I'm sorry, I couldn't generate a response."
-    except Exception as e:
+    except Exception:
         try:
             client = AsyncClient()
             response = await client.chat.completions.create(
