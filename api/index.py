@@ -1,17 +1,17 @@
 import base64
 import io
 import uuid
+import asyncio
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
 import edge_tts
-from g4f.client import AsyncClient
 
-app = FastAPI(title="AI Chatbot API")
+app = FastAPI(title="AI Voice Chatbot API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +39,42 @@ When speaking Hindi/Hinglish, use Roman script (not Devanagari) so it can be spo
 Be conversational, empathetic, and engaging. Use filler words occasionally like "hmm", "well", "you know" to sound natural.
 Keep responses concise for voice conversations - aim for 2-3 sentences unless the user asks for detailed explanations.
 Never mention that you are an AI unless directly asked. Just be helpful and conversational."""
+
+# Models to try in order of preference (free via g4f)
+MODELS_TO_TRY = [
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4",
+    "gpt-3.5-turbo",
+]
+
+
+async def _try_generate(messages: list[dict]) -> str:
+    """Try multiple models/providers via g4f until one succeeds."""
+    from g4f.client import AsyncClient
+
+    last_error = None
+    for model in MODELS_TO_TRY:
+        try:
+            client = AsyncClient()
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                ),
+                timeout=45,
+            )
+            content = response.choices[0].message.content
+            if content and content.strip():
+                return content
+        except Exception as e:
+            last_error = e
+            continue
+
+    raise HTTPException(
+        status_code=503,
+        detail=f"All AI providers are currently unavailable. Last error: {str(last_error)}"
+    )
 
 
 class ChatRequest(BaseModel):
@@ -90,26 +126,7 @@ async def chat(req: ChatRequest):
     if len(conversations[conv_id]) > 21:
         conversations[conv_id] = [conversations[conv_id][0]] + conversations[conv_id][-20:]
 
-    try:
-        client = AsyncClient()
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=conversations[conv_id],
-        )
-        reply = response.choices[0].message.content or "I'm sorry, I couldn't generate a response."
-    except Exception:
-        try:
-            client = AsyncClient()
-            response = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=conversations[conv_id],
-            )
-            reply = response.choices[0].message.content or "I'm sorry, I couldn't generate a response."
-        except Exception as e2:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to generate response: {str(e2)}"
-            )
+    reply = await _try_generate(conversations[conv_id])
 
     conversations[conv_id].append({"role": "assistant", "content": reply})
 
@@ -170,20 +187,20 @@ async def chat_and_speak(req: ChatRequest):
         audio_data.seek(0)
         audio_b64 = base64.b64encode(audio_data.read()).decode("utf-8")
 
-        return {
+        return JSONResponse({
             "reply": chat_response.reply,
             "conversation_id": chat_response.conversation_id,
             "audio_base64": audio_b64,
             "audio_mime": "audio/mpeg",
-        }
-    except Exception as e:
-        return {
+        })
+    except Exception:
+        return JSONResponse({
             "reply": chat_response.reply,
             "conversation_id": chat_response.conversation_id,
             "audio_base64": None,
             "audio_mime": None,
-            "tts_error": str(e),
-        }
+            "tts_error": "Voice synthesis temporarily unavailable",
+        })
 
 
 @app.delete("/api/conversation/{conversation_id}")
