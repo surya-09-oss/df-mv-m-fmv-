@@ -99,16 +99,20 @@ async def _try_generate(messages: list[dict]) -> str:
         finished, pending = await asyncio.wait(
             pending, return_when=asyncio.FIRST_COMPLETED
         )
+        success_result = None
         for task in finished:
             done.add(task)
-            if task.exception() is None:
-                result = task.result()
-                # Cancel remaining tasks
-                for p in pending:
-                    p.cancel()
-                return result
-            last_error = task.exception()
-            logger.warning("Tier1 provider failed: %s", last_error)
+            exc = task.exception()
+            if exc is None:
+                if success_result is None:
+                    success_result = task.result()
+            else:
+                last_error = exc
+                logger.warning("Tier1 provider failed: %s", exc)
+        if success_result is not None:
+            for p in pending:
+                p.cancel()
+            return success_result
 
     # Tier 2: sequential fallback
     for config in TIER2_PROVIDERS:
